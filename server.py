@@ -1,14 +1,18 @@
-from flask import Flask, render_template_string, request, send_file, abort
+from flask import Flask, render_template_string, request, send_file
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import random, os, io
 
 app = Flask(__name__)
 
-# Paths for images and fonts — change if needed
-OPAY_TEMPLATE = "/storage/emulated/0/Download/opay/receipt/opay.jpg"
-MON_TEMPLATE = "/storage/emulated/0/Download/opay/receipt/mon.jpg"
-ROBOTO_DIR = "/storage/emulated/0/Download/roboto/static"  # expects Roboto-Bold.ttf and Roboto-Regular.ttf
+# Use current script directory to locate fonts and images
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# File names (all in the same folder)
+OPAY_TEMPLATE = os.path.join(BASE_DIR, "opay.jpg")
+MON_TEMPLATE = os.path.join(BASE_DIR, "mon.jpg")
+ROBOTO_BOLD = os.path.join(BASE_DIR, "Roboto-Bold.ttf")
+ROBOTO_REGULAR = os.path.join(BASE_DIR, "Roboto-Regular.ttf")
 
 css_style = """
 <style>
@@ -80,7 +84,10 @@ button:hover {
 
 def load_font(style, size):
     try:
-        return ImageFont.truetype(os.path.join(ROBOTO_DIR, f"Roboto-{style}.ttf"), size)
+        if style.lower() == "bold":
+            return ImageFont.truetype(ROBOTO_BOLD, size)
+        else:
+            return ImageFont.truetype(ROBOTO_REGULAR, size)
     except Exception:
         return ImageFont.load_default()
 
@@ -117,41 +124,41 @@ def opay_form():
         C = request.form.get("recipient_account", "").strip()
         S = request.form.get("sender_name", "").strip().title()
         O = request.form.get("opay_number", "").strip()
-        
+
         if not all([A, N, B, C, S]):
             return "<h2 style='color:white;'>Missing required fields.</h2>", 400
         if not os.path.exists(OPAY_TEMPLATE):
             return f"<h2 style='color:white;'>OPay template image not found at {OPAY_TEMPLATE}</h2>", 500
-        
+
         try:
             img = Image.open(OPAY_TEMPLATE).convert("RGB")
             d = ImageDraw.Draw(img)
             f = lambda s, z: load_font(s, z)
-            
+
             if C.isdigit() and len(C) == 11:
                 C = f"{C[:3]} {C[3:6]} {C[6:]}"
             M = f"Opay | {O[:3]}****{O[-3:]}" if O else "Opay"
-            
+
             now = datetime.now()
             sfx = lambda d: "th" if 11 <= d <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
             dt = now.strftime(f"%b {now.day}{sfx(now.day)}, %Y %H:%M:%S")
             tx = ''.join(str(random.randint(0, 9)) for _ in range(30))
-            
+
             amt_val = int(float(A))
             amt = f"₦{amt_val:,}.00"
             ax = (img.width - d.textlength(amt, f("Bold", 46))) // 2
             d.text((ax, 190), amt, font=f("Bold", 46), fill=(29, 207, 159))
-            
+
             dx = (img.width - d.textlength(dt, f("Regular", 20))) // 2
             d.text((dx, 300), dt, font=f("Regular", 20), fill="black")
-            
+
             R = lambda t, y, fo: d.text((img.width - 40 - d.textlength(t, fo), y), t, font=fo, fill="black")
             R(N, 380, f("Bold", 24))
             R(f"{B} | {C}", 420, f("Regular", 24))
             R(S, 490, f("Bold", 24))
             R(M, 530, f("Regular", 24))
             R(tx, 600, f("Regular", 26))
-            
+
             pdf_bytes = image_to_pdf_bytes(img)
             return send_file(pdf_bytes, as_attachment=True, download_name="opay_receipt.pdf", mimetype="application/pdf")
         except Exception as e:
@@ -184,20 +191,20 @@ def moniepoint_form():
         B = request.form.get("recipient_bank", "").strip().title()
         C = request.form.get("recipient_account", "").strip()
         S = request.form.get("sender_name", "").strip().upper()
-        
+
         if not all([A, N, B, C, S]):
             return "<h2 style='color:white;'>Missing required fields.</h2>", 400
         if not os.path.exists(MON_TEMPLATE):
             return f"<h2 style='color:white;'>Moniepoint template image not found at {MON_TEMPLATE}</h2>", 500
-        
+
         try:
             img = Image.open(MON_TEMPLATE).convert("RGB")
             d = ImageDraw.Draw(img)
             f = lambda s, z=20: load_font(s, z)
-            
+
             T = ''.join(str(random.randint(0, 9)) for _ in range(30))
             D = datetime.now().strftime("%A, %B %d, %Y | %I:%M %p").replace(" 0", " ")
-            
+
             amt_val = int(float(A))
             d.text((50, 210), f"₦{amt_val:,}.00", font=f("Bold", 46), fill=(0, 0, 0))
             d.text((72, 460), f"{N} | {C}", font=f("Regular"), fill=(0, 0, 0))
@@ -207,7 +214,7 @@ def moniepoint_form():
             d.text((72, 840), D, font=f("Regular"), fill=(0, 0, 0))
             d.text((72, 940), T, font=f("Regular"), fill=(0, 0, 0))
             d.text((72, 1020), S, font=f("Regular"), fill=(0, 0, 0))
-            
+
             pdf_bytes = image_to_pdf_bytes(img)
             return send_file(pdf_bytes, as_attachment=True, download_name="moniepoint_receipt.pdf", mimetype="application/pdf")
         except Exception as e:
