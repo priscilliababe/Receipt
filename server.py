@@ -1,14 +1,13 @@
 from flask import Flask, render_template_string, request, send_file
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import random, os, io
 
 app = Flask(__name__)
 
-# Use current script directory to locate fonts and images
+# Paths for images and fonts (in same folder as this script)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# File names (all in the same folder)
 OPAY_TEMPLATE = os.path.join(BASE_DIR, "opay.jpg")
 MON_TEMPLATE = os.path.join(BASE_DIR, "mon.jpg")
 ROBOTO_BOLD = os.path.join(BASE_DIR, "Roboto-Bold.ttf")
@@ -203,7 +202,8 @@ def moniepoint_form():
             f = lambda s, z=20: load_font(s, z)
 
             T = ''.join(str(random.randint(0, 9)) for _ in range(30))
-            D = datetime.now().strftime("%A, %B %d, %Y | %I:%M %p").replace(" 0", " ")
+            now = datetime.now(ZoneInfo("Africa/Lagos"))  # Use Lagos timezone
+            D = now.strftime("%A, %B %d, %Y | %I:%M %p").replace(" 0", " ")
 
             amt_val = int(float(A))
             d.text((50, 210), f"₦{amt_val:,}.00", font=f("Bold", 46), fill=(0, 0, 0))
@@ -239,5 +239,4 @@ def moniepoint_form():
     """)
 
 if __name__ == "__main__":
-    # Use 0.0.0.0 if you want to access from other devices on your network
     app.run(host="0.0.0.0", port=5000, debug=True)
