@@ -90,12 +90,6 @@ def load_font(style, size):
     except Exception:
         return ImageFont.load_default()
 
-def image_to_pdf_bytes(img: Image.Image) -> io.BytesIO:
-    buf = io.BytesIO()
-    img.save(buf, format="PDF")
-    buf.seek(0)
-    return buf
-
 @app.route("/")
 def index():
     return render_template_string(f"""
@@ -118,10 +112,10 @@ def index():
 def opay_form():
     if request.method == "POST":
         A = request.form.get("amount", "").strip()
-        N = request.form.get("recipient_name", "").strip().title()
+        N = request.form.get("recipient_name", "").strip().upper()
         B = request.form.get("recipient_bank", "").strip().upper()
         C = request.form.get("recipient_account", "").strip()
-        S = request.form.get("sender_name", "").strip().title()
+        S = request.form.get("sender_name", "").strip().upper()
         O = request.form.get("opay_number", "").strip()
 
         if not all([A, N, B, C, S]):
@@ -136,8 +130,13 @@ def opay_form():
 
             if C.isdigit() and len(C) == 11:
                 C = f"{C[:3]} {C[3:6]} {C[6:]}"
-            M = f"Opay | {O[:3]}****{O[-3:]}" if O else "Opay"
-
+            
+            # Mask Opay number in sender info
+            if O and len(O) >= 6:
+                M = f"Opay | {O[:3]}****{O[-3:]}"
+            else:
+                M = "Opay"
+            
             now = datetime.now()
             sfx = lambda d: "th" if 11 <= d <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
             dt = now.strftime(f"%b {now.day}{sfx(now.day)}, %Y %H:%M:%S")
@@ -158,8 +157,10 @@ def opay_form():
             R(M, 530, f("Regular", 24))
             R(tx, 600, f("Regular", 26))
 
-            pdf_bytes = image_to_pdf_bytes(img)
-            return send_file(pdf_bytes, as_attachment=True, download_name="opay_receipt.pdf", mimetype="application/pdf")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name="opay_receipt.png", mimetype="image/png")
         except Exception as e:
             return f"<h2 style='color:white;'>Error: {e}</h2>", 500
 
@@ -198,11 +199,13 @@ def moniepoint_form():
 
         try:
             img = Image.open(MON_TEMPLATE).convert("RGB")
+            print(f"Loaded moniepoint image size: {img.size}")  # Debug print
+
             d = ImageDraw.Draw(img)
             f = lambda s, z=20: load_font(s, z)
 
             T = ''.join(str(random.randint(0, 9)) for _ in range(30))
-            now = datetime.now(ZoneInfo("Africa/Lagos"))  # Use Lagos timezone
+            now = datetime.now(ZoneInfo("Africa/Lagos"))
             D = now.strftime("%A, %B %d, %Y | %I:%M %p").replace(" 0", " ")
 
             amt_val = int(float(A))
@@ -215,10 +218,13 @@ def moniepoint_form():
             d.text((72, 940), T, font=f("Regular"), fill=(0, 0, 0))
             d.text((72, 1020), S, font=f("Regular"), fill=(0, 0, 0))
 
-            pdf_bytes = image_to_pdf_bytes(img)
-            return send_file(pdf_bytes, as_attachment=True, download_name="moniepoint_receipt.pdf", mimetype="application/pdf")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name="moniepoint_receipt.png", mimetype="image/png")
         except Exception as e:
-            return f"<h2 style='color:white;'>Error: {e}</h2>", 500
+            print("Error generating moniepoint receipt:", e)
+            return f"<h2 style='color:white;'>Error generating receipt: {e}</h2>", 500
 
     return render_template_string(f"""
     <!DOCTYPE html>
