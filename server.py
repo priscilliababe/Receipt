@@ -1,12 +1,11 @@
-from flask import Flask, render_template_string, request, send_file
+from flask import Flask, render_template_string, request, send_file, url_for
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import random, os, io
+import random, os, io, base64, tempfile
 
 app = Flask(__name__)
 
-# Paths for images and fonts (in same folder as this script)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OPAY_TEMPLATE = os.path.join(BASE_DIR, "opay.jpg")
 MON_TEMPLATE = os.path.join(BASE_DIR, "mon.jpg")
@@ -131,7 +130,6 @@ def opay_form():
             if C.isdigit() and len(C) == 11:
                 C = f"{C[:3]} {C[3:6]} {C[6:]}"
             
-            # Mask Opay number in sender info
             if O and len(O) >= 6:
                 M = f"Opay | {O[:3]}****{O[-3:]}"
             else:
@@ -139,7 +137,7 @@ def opay_form():
             
             now = datetime.now()
             sfx = lambda d: "th" if 11 <= d <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
-            dt = now.strftime(f"%b {now.day}{sfx(now.day)}, %Y %H:%M:%S")
+            dt = now.strftime(f"%b {now.day}{sfx(now.day)}, %Y %I:%M:%S %p")  # 12-hour time with AM/PM
             tx = ''.join(str(random.randint(0, 9)) for _ in range(30))
 
             amt_val = int(float(A))
@@ -157,10 +155,30 @@ def opay_form():
             R(M, 530, f("Regular", 24))
             R(tx, 600, f("Regular", 26))
 
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            buf.seek(0)
-            return send_file(buf, as_attachment=True, download_name="opay_receipt.png", mimetype="image/png")
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            img.save(temp_file.name, format="JPEG", quality=95)
+            temp_file.close()
+
+            with open(temp_file.name, "rb") as f_img:
+                img_b64 = base64.b64encode(f_img.read()).decode('utf-8')
+
+            download_url = url_for("download_receipt", filename=os.path.basename(temp_file.name))
+
+            return render_template_string(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><title>OPay Receipt</title>{css_style}</head>
+            <body style="color:white; text-align:center; padding:20px;">
+                <h1 class="glow-text">Your OPay Receipt</h1>
+                <img src="data:image/jpeg;base64,{img_b64}" alt="OPay Receipt" style="max-width:90%; height:auto; border-radius:15px; box-shadow: 0 0 20px cyan;">
+                <br><br>
+                <a href="{download_url}" class="rainbow-button">⬇️ Download Receipt</a>
+                <br><br>
+                <a href="/" class="rainbow-button" style="margin-top: 30px;">⬅️ Back to Home</a>
+            </body>
+            </html>
+            """)
+
         except Exception as e:
             return f"<h2 style='color:white;'>Error: {e}</h2>", 500
 
@@ -199,8 +217,6 @@ def moniepoint_form():
 
         try:
             img = Image.open(MON_TEMPLATE).convert("RGB")
-            print(f"Loaded moniepoint image size: {img.size}")  # Debug print
-
             d = ImageDraw.Draw(img)
             f = lambda s, z=20: load_font(s, z)
 
@@ -218,12 +234,31 @@ def moniepoint_form():
             d.text((72, 940), T, font=f("Regular"), fill=(0, 0, 0))
             d.text((72, 1020), S, font=f("Regular"), fill=(0, 0, 0))
 
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            buf.seek(0)
-            return send_file(buf, as_attachment=True, download_name="moniepoint_receipt.png", mimetype="image/png")
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            img.save(temp_file.name, format="JPEG", quality=95)
+            temp_file.close()
+
+            with open(temp_file.name, "rb") as f_img:
+                img_b64 = base64.b64encode(f_img.read()).decode('utf-8')
+
+            download_url = url_for("download_receipt", filename=os.path.basename(temp_file.name))
+
+            return render_template_string(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Moniepoint Receipt</title>{css_style}</head>
+            <body style="color:white; text-align:center; padding:20px;">
+                <h1 class="glow-text">Your Moniepoint Receipt</h1>
+                <img src="data:image/jpeg;base64,{img_b64}" alt="Moniepoint Receipt" style="max-width:90%; height:auto; border-radius:15px; box-shadow: 0 0 20px cyan;">
+                <br><br>
+                <a href="{download_url}" class="rainbow-button">⬇️ Download Receipt</a>
+                <br><br>
+                <a href="/" class="rainbow-button" style="margin-top: 30px;">⬅️ Back to Home</a>
+            </body>
+            </html>
+            """)
+
         except Exception as e:
-            print("Error generating moniepoint receipt:", e)
             return f"<h2 style='color:white;'>Error generating receipt: {e}</h2>", 500
 
     return render_template_string(f"""
@@ -243,6 +278,13 @@ def moniepoint_form():
     </body>
     </html>
     """)
+
+@app.route("/download/<filename>")
+def download_receipt(filename):
+    safe_path = os.path.join(tempfile.gettempdir(), filename)
+    if not os.path.exists(safe_path):
+        return "<h2 style='color:white;'>File not found.</h2>", 404
+    return send_file(safe_path, mimetype="image/jpeg", as_attachment=True, download_name=filename)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
